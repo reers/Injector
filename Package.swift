@@ -5,6 +5,7 @@ import CompilerPluginSupport
 let package = Package(
     name: "Injector",
     platforms: [
+        .iOS(.v13),
         .macOS(.v13)
     ],
     products: [

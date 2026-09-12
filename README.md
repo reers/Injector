@@ -33,7 +33,7 @@ Then add the product to your target:
 )
 ```
 
-Injector currently targets macOS 13 or later and uses Swift macros.
+Injector currently targets iOS 13, macOS 13, or later and uses Swift macros.
 
 ## Quick Start
 
@@ -231,20 +231,43 @@ Injector.shared.install(AppModule.self)
 
 ## Test Overrides
 
-Use `withTestOverrides` to replace dependencies during a test without leaking registrations into other tests:
+Use `withOverrides` to replace dependencies during a test without leaking registrations into other tests:
 
 ```swift
-try Injector.shared.withTestOverrides {
-    Injector.shared.bind(\.paymentService, scope: .singleton) { _ in
+let receipt = try Injector.withOverrides {
+    $0.bind(\.paymentService, scope: .singleton) { _ in
         MockPaymentService()
     }
-
-    let service = Injector.shared.resolve(\.paymentService)
+} operation: {
+    let service = Injector.current.resolve(\.paymentService)
     // Assert against the mock-backed behavior.
+    return service.pay(amount: 99)
 }
 ```
 
-During a test override scope, lazy Rhea service installation is skipped so explicit test bindings are not replaced by real service bindings.
+`@Injected` reads from `Injector.current`, so objects created inside an override scope automatically use the scoped bindings:
+
+```swift
+let output = Injector.withOverrides {
+    $0.bind(\.paymentService, scope: .singleton) { _ in
+        MockPaymentService()
+    }
+} operation: {
+    CheckoutViewModel().submit()
+}
+```
+
+The same API is available for async tests:
+
+```swift
+let output = try await Injector.withOverrides {
+    $0.bind(\.paymentService, scope: .singleton) { _ in
+        MockPaymentService()
+    }
+} operation: {
+    try await CheckoutViewModel().submit()
+}
+```
 
 ## API Shape
 
@@ -265,6 +288,12 @@ public final class PaymentService: PaymentFeatureAPI {}
 Injector.shared.bind(\.paymentService) { _ in PaymentService() }
 Injector.shared.bindInstance(\.appDefaults, defaults)
 Injector.shared.resolve(\.paymentService)
+
+Injector.withOverrides {
+    $0.bind(\.paymentService) { _ in MockPaymentService() }
+} operation: {
+    CheckoutViewModel().submit()
+}
 ```
 
 `Entry` and `Scope` are top-level public types. After `import Injector`, use them directly as `Entry<Service>` and `Scope`.

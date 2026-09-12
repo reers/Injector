@@ -13,9 +13,15 @@ public protocol Module {
 public struct Injected<Service> {
     private let resolveValue: () -> Service
 
+    public init(_ entryKeyPath: KeyPath<Injector, Entry<Service>>) {
+        self.resolveValue = {
+            Injector.current.resolve(entryKeyPath)
+        }
+    }
+
     public init(
         _ entryKeyPath: KeyPath<Injector, Entry<Service>>,
-        container: Injector = .shared
+        container: Injector
     ) {
         self.resolveValue = {
             container.resolve(entryKeyPath)
@@ -29,6 +35,12 @@ public struct Injected<Service> {
 
 public final class Injector: Resolver, @unchecked Sendable {
     public static let shared = Injector()
+
+    @TaskLocal private static var scopedInjector: Injector?
+
+    public static var current: Injector {
+        scopedInjector ?? shared
+    }
 
     private struct Registration {
         let scope: Scope
@@ -56,6 +68,28 @@ public final class Injector: Resolver, @unchecked Sendable {
     private var isUsingTestOverrides = false
 
     public init() {}
+
+    public static func withOverrides<Result>(
+        _ update: (Injector) throws -> Void,
+        operation: () throws -> Result
+    ) rethrows -> Result {
+        let injector = makeOverrideInjector()
+        try update(injector)
+        return try $scopedInjector.withValue(injector) {
+            try operation()
+        }
+    }
+
+    public static func withOverrides<Result>(
+        _ update: (Injector) throws -> Void,
+        operation: () async throws -> Result
+    ) async rethrows -> Result {
+        let injector = makeOverrideInjector()
+        try update(injector)
+        return try await $scopedInjector.withValue(injector) {
+            try await operation()
+        }
+    }
 
     public func installRheaServiceBindingsIfNeeded() {
         lock.lock()
@@ -224,6 +258,24 @@ public final class Injector: Resolver, @unchecked Sendable {
         if shouldInstall {
             installRheaServiceBindingsIfNeeded()
         }
+    }
+
+    private static func makeOverrideInjector() -> Injector {
+        if scopedInjector == nil {
+            shared.installRheaServiceBindingsIfNeeded()
+        }
+
+        return current.copyForOverrides()
+    }
+
+    private func copyForOverrides() -> Injector {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let injector = Injector()
+        injector.registrations = registrations
+        injector.didInstallRheaServiceBindings = didInstallRheaServiceBindings
+        return injector
     }
 }
 

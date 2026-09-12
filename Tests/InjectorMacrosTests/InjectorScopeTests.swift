@@ -4,6 +4,11 @@ import XCTest
 private final class TestScopedService {}
 private protocol TestEntryService: AnyObject {}
 private final class TestEntryServiceImpl: TestEntryService {}
+private final class TestOverrideService {}
+
+private enum TestOverrideError: Error {
+    case expected
+}
 
 private extension Injector {
     var testEntryService: Entry<TestEntryService> {
@@ -13,13 +18,27 @@ private extension Injector {
     var testScopedService: Entry<TestScopedService> {
         .service(TestScopedService.self)
     }
+
+    var testOverrideService: Entry<TestOverrideService> {
+        .service(TestOverrideService.self)
+    }
 }
 
 private struct TestEntryConsumer {
     @Injected(\.testEntryService) var service: TestEntryService
 }
 
+private struct TestOverrideConsumer {
+    @Injected(\.testOverrideService) var service: TestOverrideService
+}
+
 final class InjectorScopeTests: XCTestCase {
+    func testPackageSupportsIOS13() throws {
+        let packageSource = try String(contentsOfFile: packageSourcePath)
+
+        XCTAssertTrue(packageSource.contains(".iOS(.v13)"))
+    }
+
     func testEntryAndScopeAreTopLevelPublicTypes() throws {
         let injectorSource = try String(contentsOfFile: injectorSourcePath)
         let entrySource = try String(contentsOfFile: entrySourcePath)
@@ -121,7 +140,67 @@ final class InjectorScopeTests: XCTestCase {
             XCTAssertTrue(first === second)
         }
     }
+
+    func testWithOverridesUsesScopedBindingsForInjectedProperties() throws {
+        Injector.shared.withTestOverrides {
+            let sharedService = TestOverrideService()
+            let scopedService = TestOverrideService()
+            Injector.shared.bindInstance(\.testOverrideService, sharedService)
+
+            let resolved = Injector.withOverrides {
+                $0.bindInstance(\.testOverrideService, scopedService)
+            } operation: {
+                TestOverrideConsumer().service
+            }
+
+            XCTAssertTrue(resolved === scopedService)
+            XCTAssertTrue(Injector.shared.resolve(\.testOverrideService) === sharedService)
+        }
+    }
+
+    func testWithOverridesProvidesCurrentInjectorInsideOperation() throws {
+        let scopedService = TestOverrideService()
+
+        let resolved = Injector.withOverrides {
+            $0.bindInstance(\.testOverrideService, scopedService)
+        } operation: {
+            Injector.current.resolve(\.testOverrideService)
+        }
+
+        XCTAssertTrue(resolved === scopedService)
+    }
+
+    func testWithOverridesRethrowsOperationErrors() {
+        XCTAssertThrowsError(
+            try Injector.withOverrides { _ in
+            } operation: {
+                throw TestOverrideError.expected
+            }
+        ) { error in
+            XCTAssertEqual(error as? TestOverrideError, .expected)
+        }
+    }
+
+    func testWithOverridesKeepsScopedBindingsAcrossAsyncOperations() async throws {
+        let scopedService = TestOverrideService()
+
+        let resolved = await Injector.withOverrides {
+            $0.bindInstance(\.testOverrideService, scopedService)
+        } operation: {
+            await Task.yield()
+            return TestOverrideConsumer().service
+        }
+
+        XCTAssertTrue(resolved === scopedService)
+    }
 }
+
+private let packageSourcePath = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .appendingPathComponent("Package.swift")
+    .path
 
 private let injectorSourcePath = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
