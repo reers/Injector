@@ -1,4 +1,4 @@
-public struct Entry<Service> {
+public struct Dependency<Service> {
     public let serviceType: Service.Type
     public let key: String
 

@@ -67,7 +67,7 @@ private struct BindServiceArguments {
         guard case let .argumentList(arguments) = node.arguments,
               let targetArgument = arguments.first(where: { $0.label == nil })
         else {
-            throw MacroExpansionErrorMessage("@BindService requires a service entry key path, for example @BindService(\\.paymentService)")
+            throw MacroExpansionErrorMessage("@BindService requires a dependency key path, for example @BindService(\\.paymentService)")
         }
 
         target = targetArgument.expression.trimmedDescription

@@ -2,11 +2,11 @@
 
 Injector is a lightweight dependency injection framework for Swift.
 
-It is built around a small container, strongly typed entries, key-path based resolution, and a `@BindService` macro that can register services automatically through [Rhea](https://github.com/reers/Rhea).
+It is built around a small container, strongly typed dependencies, key-path based resolution, and a `@BindService` macro that can register services automatically through [Rhea](https://github.com/reers/Rhea).
 
 ## Features
 
-- Strongly typed dependency entries declared as `extension Injector` properties.
+- Strongly typed dependencies declared as `extension Injector` properties.
 - Key-path based `bind`, `resolve`, `remove`, and `@Injected` APIs.
 - `@BindService` macro for colocating protocol bindings with service implementations.
 - Lazy Rhea registration: macro-generated bindings are installed before the first resolve.
@@ -45,13 +45,13 @@ public protocol PaymentFeatureAPI {
 }
 ```
 
-Expose the dependency as an entry. Entries are regular properties on `Injector`, and `Entry` is a top-level public type from the `Injector` module:
+Expose the dependency as a regular property on `Injector`. `Dependency` is a top-level public type from the `Injector` module:
 
 ```swift
 import Injector
 
 public extension Injector {
-    var paymentService: Entry<PaymentFeatureAPI> {
+    var paymentService: Dependency<PaymentFeatureAPI> {
         .service(PaymentFeatureAPI.self)
     }
 }
@@ -90,17 +90,17 @@ public final class CheckoutViewModel {
 }
 ```
 
-## Entries
+## Dependencies
 
-Injector intentionally uses named entries instead of type-only lookups:
+Injector intentionally uses named dependencies instead of type-only lookups:
 
 ```swift
 public extension Injector {
-    var primaryPaymentService: Entry<PaymentFeatureAPI> {
+    var primaryPaymentService: Dependency<PaymentFeatureAPI> {
         .service(PaymentFeatureAPI.self)
     }
 
-    var fallbackPaymentService: Entry<PaymentFeatureAPI> {
+    var fallbackPaymentService: Dependency<PaymentFeatureAPI> {
         .service(PaymentFeatureAPI.self)
     }
 }
@@ -108,7 +108,7 @@ public extension Injector {
 
 This keeps call sites readable and allows multiple bindings for the same protocol or concrete type.
 
-Public APIs accept entry key paths:
+Public APIs accept dependency key paths:
 
 ```swift
 Injector.shared.bind(\.primaryPaymentService) { _ in PrimaryPaymentService() }
@@ -163,14 +163,14 @@ public final class TemporaryService: TemporaryFeatureAPI {}
 
 Some dependencies are not service types. They may be created from environment, process arguments, configuration files, suite names, or app lifecycle state.
 
-For those cases, declare an entry and bind the already-created instance:
+For those cases, declare a dependency and bind the already-created instance:
 
 ```swift
 import Foundation
 import Injector
 
 public extension Injector {
-    var appDefaults: Entry<UserDefaults> {
+    var appDefaults: Dependency<UserDefaults> {
         .service(UserDefaults.self)
     }
 }
@@ -275,7 +275,7 @@ The recommended public surface is:
 
 ```swift
 public extension Injector {
-    var paymentService: Entry<PaymentFeatureAPI> {
+    var paymentService: Dependency<PaymentFeatureAPI> {
         .service(PaymentFeatureAPI.self)
     }
 }
@@ -296,7 +296,7 @@ Injector.withOverrides {
 }
 ```
 
-`Entry` and `Scope` are top-level public types. After `import Injector`, use them directly as `Entry<Service>` and `Scope`.
+`Dependency` and `Scope` are top-level public types. After `import Injector`, use them directly as `Dependency<Service>` and `Scope`.
 
 ## License
 

@@ -2,7 +2,7 @@
 import Foundation
 
 public protocol Resolver: AnyObject {
-    func resolve<Service>(_ entryKeyPath: KeyPath<Injector, Entry<Service>>) -> Service
+    func resolve<Service>(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) -> Service
 }
 
 public protocol Module {
@@ -13,18 +13,18 @@ public protocol Module {
 public struct Injected<Service> {
     private let resolveValue: () -> Service
 
-    public init(_ entryKeyPath: KeyPath<Injector, Entry<Service>>) {
+    public init(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) {
         self.resolveValue = {
-            Injector.current.resolve(entryKeyPath)
+            Injector.current.resolve(dependencyKeyPath)
         }
     }
 
     public init(
-        _ entryKeyPath: KeyPath<Injector, Entry<Service>>,
+        _ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>,
         container: Injector
     ) {
         self.resolveValue = {
-            container.resolve(entryKeyPath)
+            container.resolve(dependencyKeyPath)
         }
     }
 
@@ -50,15 +50,15 @@ public final class Injector: Resolver, @unchecked Sendable {
 
     private struct RegistrationKey: Hashable {
         let serviceType: ObjectIdentifier
-        let entryKey: String?
+        let dependencyKey: String?
 
-        init<Service>(_ serviceType: Service.Type, entryKey: String? = nil) {
+        init<Service>(_ serviceType: Service.Type, dependencyKey: String? = nil) {
             self.serviceType = ObjectIdentifier(serviceType)
-            self.entryKey = entryKey
+            self.dependencyKey = dependencyKey
         }
 
-        init<Service>(_ entry: Entry<Service>) {
-            self.init(entry.serviceType, entryKey: entry.key)
+        init<Service>(_ dependency: Dependency<Service>) {
+            self.init(dependency.serviceType, dependencyKey: dependency.key)
         }
     }
 
@@ -112,22 +112,22 @@ public final class Injector: Resolver, @unchecked Sendable {
     }
 
     public func bind<Service>(
-        _ entryKeyPath: KeyPath<Injector, Entry<Service>>,
+        _ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>,
         scope: Scope = .new,
         factory: @escaping (Resolver) -> Service
     ) {
-        bind(self[keyPath: entryKeyPath], scope: scope, factory: factory)
+        bind(self[keyPath: dependencyKeyPath], scope: scope, factory: factory)
     }
 
     private func bind<Service>(
-        _ entry: Entry<Service>,
+        _ dependency: Dependency<Service>,
         scope: Scope = .new,
         factory: @escaping (Resolver) -> Service
     ) {
         lock.lock()
         defer { lock.unlock() }
 
-        let key = RegistrationKey(entry)
+        let key = RegistrationKey(dependency)
         registrations[key] = Registration(
             scope: scope,
             factory: { resolver in factory(resolver) },
@@ -136,20 +136,20 @@ public final class Injector: Resolver, @unchecked Sendable {
     }
 
     public func bindInstance<Service>(
-        _ entryKeyPath: KeyPath<Injector, Entry<Service>>,
+        _ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>,
         _ instance: Service
     ) {
-        bindInstance(self[keyPath: entryKeyPath], instance)
+        bindInstance(self[keyPath: dependencyKeyPath], instance)
     }
 
     private func bindInstance<Service>(
-        _ entry: Entry<Service>,
+        _ dependency: Dependency<Service>,
         _ instance: Service
     ) {
         lock.lock()
         defer { lock.unlock() }
 
-        let key = RegistrationKey(entry)
+        let key = RegistrationKey(dependency)
         registrations[key] = Registration(
             scope: .singleton,
             factory: { _ in instance },
@@ -157,15 +157,15 @@ public final class Injector: Resolver, @unchecked Sendable {
         )
     }
 
-    public func remove<Service>(_ entryKeyPath: KeyPath<Injector, Entry<Service>>) {
-        remove(self[keyPath: entryKeyPath])
+    public func remove<Service>(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) {
+        remove(self[keyPath: dependencyKeyPath])
     }
 
-    private func remove<Service>(_ entry: Entry<Service>) {
+    private func remove<Service>(_ dependency: Dependency<Service>) {
         lock.lock()
         defer { lock.unlock() }
 
-        let key = RegistrationKey(entry)
+        let key = RegistrationKey(dependency)
         registrations.removeValue(forKey: key)
     }
 
@@ -198,12 +198,12 @@ public final class Injector: Resolver, @unchecked Sendable {
         return try body()
     }
 
-    public func resolve<Service>(_ entryKeyPath: KeyPath<Injector, Entry<Service>>) -> Service {
-        resolve(self[keyPath: entryKeyPath])
+    public func resolve<Service>(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) -> Service {
+        resolve(self[keyPath: dependencyKeyPath])
     }
 
-    private func resolve<Service>(_ entry: Entry<Service>) -> Service {
-        resolve(serviceType: entry.serviceType, key: RegistrationKey(entry))
+    private func resolve<Service>(_ dependency: Dependency<Service>) -> Service {
+        resolve(serviceType: dependency.serviceType, key: RegistrationKey(dependency))
     }
 
     private func resolve<Service>(

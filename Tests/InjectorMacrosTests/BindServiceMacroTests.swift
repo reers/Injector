@@ -11,14 +11,14 @@ private let testMacros: [String: Macro.Type] = [
 #endif
 
 final class BindServiceMacroTests: XCTestCase {
-    func testBindServiceMacroOnlyExposesServiceEntryAPI() throws {
+    func testBindServiceMacroOnlyExposesDependencyAPI() throws {
         let source = try String(contentsOfFile: bindServiceSourcePath)
 
         XCTAssertFalse(source.contains("_ serviceType: Service.Type"))
-        XCTAssertTrue(source.contains("_ entryKeyPath: KeyPath<Injector, Entry<Service>>"))
+        XCTAssertTrue(source.contains("_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>"))
     }
 
-    func testBindServiceMacroCanRegisterAServiceEntry() throws {
+    func testBindServiceMacroCanRegisterADependency() throws {
         #if canImport(InjectorMacros)
         assertMacroExpansion(
             """

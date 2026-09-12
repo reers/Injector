@@ -2,8 +2,8 @@ import Injector
 import XCTest
 
 private final class TestScopedService {}
-private protocol TestEntryService: AnyObject {}
-private final class TestEntryServiceImpl: TestEntryService {}
+private protocol TestDependencyService: AnyObject {}
+private final class TestDependencyServiceImpl: TestDependencyService {}
 private final class TestOverrideService {}
 
 private enum TestOverrideError: Error {
@@ -11,21 +11,21 @@ private enum TestOverrideError: Error {
 }
 
 private extension Injector {
-    var testEntryService: Entry<TestEntryService> {
-        .service(TestEntryService.self)
+    var testDependencyService: Dependency<TestDependencyService> {
+        .service(TestDependencyService.self)
     }
 
-    var testScopedService: Entry<TestScopedService> {
+    var testScopedService: Dependency<TestScopedService> {
         .service(TestScopedService.self)
     }
 
-    var testOverrideService: Entry<TestOverrideService> {
+    var testOverrideService: Dependency<TestOverrideService> {
         .service(TestOverrideService.self)
     }
 }
 
-private struct TestEntryConsumer {
-    @Injected(\.testEntryService) var service: TestEntryService
+private struct TestDependencyConsumer {
+    @Injected(\.testDependencyService) var service: TestDependencyService
 }
 
 private struct TestOverrideConsumer {
@@ -39,65 +39,67 @@ final class InjectorScopeTests: XCTestCase {
         XCTAssertTrue(packageSource.contains(".iOS(.v13)"))
     }
 
-    func testEntryAndScopeAreTopLevelPublicTypes() throws {
+    func testDependencyAndScopeAreTopLevelPublicTypes() throws {
         let injectorSource = try String(contentsOfFile: injectorSourcePath)
-        let entrySource = try String(contentsOfFile: entrySourcePath)
+        let dependencySource = try String(contentsOfFile: dependencySourcePath)
 
         XCTAssertTrue(injectorSource.contains("public final class Injector"))
         XCTAssertTrue(injectorSource.contains("scope: Scope = .new"))
-        XCTAssertTrue(entrySource.contains("public struct Entry<Service>"))
-        XCTAssertTrue(entrySource.contains("public enum Scope"))
+        XCTAssertTrue(dependencySource.contains("public struct Dependency<Service>"))
+        XCTAssertTrue(dependencySource.contains("public enum Scope"))
+        XCTAssertFalse(injectorSource.contains("public struct Dependency<Service>"))
         XCTAssertFalse(injectorSource.contains("public struct Entry<Service>"))
         XCTAssertFalse(injectorSource.contains("public enum Scope"))
         XCTAssertFalse(injectorSource.contains("DIContainer"))
         XCTAssertFalse(injectorSource.contains("DIEntry"))
         XCTAssertFalse(injectorSource.contains("DIEntries"))
         XCTAssertFalse(injectorSource.contains("DIScope"))
-        XCTAssertFalse(entrySource.contains("DIEntry"))
-        XCTAssertFalse(entrySource.contains("DIEntries"))
-        XCTAssertFalse(entrySource.contains("DIScope"))
+        XCTAssertFalse(dependencySource.contains("public struct Entry<Service>"))
+        XCTAssertFalse(dependencySource.contains("DIEntry"))
+        XCTAssertFalse(dependencySource.contains("DIEntries"))
+        XCTAssertFalse(dependencySource.contains("DIScope"))
     }
 
-    func testInjectorOnlyExposesServiceEntryKeyPathAPI() throws {
+    func testInjectorOnlyExposesDependencyKeyPathAPI() throws {
         let source = try String(contentsOfFile: injectorSourcePath)
 
         XCTAssertFalse(source.contains("func resolve<Service>(_ serviceType: Service.Type"))
         XCTAssertFalse(source.contains("public init(\n        _ serviceType: Service.Type"))
         XCTAssertFalse(source.contains("public func bind<Service>(\n        _ serviceType: Service.Type"))
-        XCTAssertFalse(source.contains("public func bind<Service>(\n        _ entry: Entry<Service>"))
+        XCTAssertFalse(source.contains("public func bind<Service>(\n        _ dependency: Dependency<Service>"))
         XCTAssertFalse(source.contains("public func bindInstance<Service>(\n        _ serviceType: Service.Type"))
-        XCTAssertFalse(source.contains("public func bindInstance<Service>(\n        _ entry: Entry<Service>"))
+        XCTAssertFalse(source.contains("public func bindInstance<Service>(\n        _ dependency: Dependency<Service>"))
         XCTAssertFalse(source.contains("public func remove<Service>(_ serviceType: Service.Type"))
-        XCTAssertFalse(source.contains("public func remove<Service>(_ entry: Entry<Service>"))
+        XCTAssertFalse(source.contains("public func remove<Service>(_ dependency: Dependency<Service>"))
         XCTAssertFalse(source.contains("public func resolve<Service>(_ serviceType: Service.Type"))
-        XCTAssertFalse(source.contains("public func resolve<Service>(_ entry: Entry<Service>"))
+        XCTAssertFalse(source.contains("public func resolve<Service>(_ dependency: Dependency<Service>"))
     }
 
-    func testServiceEntryUsesThePropertyNameAsItsKey() {
-        XCTAssertEqual(Injector().testEntryService.key, "testEntryService")
+    func testDependencyUsesThePropertyNameAsItsKey() {
+        XCTAssertEqual(Injector().testDependencyService.key, "testDependencyService")
     }
 
-    func testCanBindResolveAndInjectUsingServiceEntries() {
+    func testCanBindResolveAndInjectUsingDependencies() {
         Injector.shared.withTestOverrides {
-            Injector.shared.bind(\.testEntryService, scope: .singleton) { _ in
-                TestEntryServiceImpl()
+            Injector.shared.bind(\.testDependencyService, scope: .singleton) { _ in
+                TestDependencyServiceImpl()
             }
 
-            let resolved = Injector.shared.resolve(\.testEntryService)
-            let injected = TestEntryConsumer().service
+            let resolved = Injector.shared.resolve(\.testDependencyService)
+            let injected = TestDependencyConsumer().service
 
-            XCTAssertTrue(resolved is TestEntryServiceImpl)
-            XCTAssertTrue(injected is TestEntryServiceImpl)
+            XCTAssertTrue(resolved is TestDependencyServiceImpl)
+            XCTAssertTrue(injected is TestDependencyServiceImpl)
         }
     }
 
-    func testCanBindInstanceUsingServiceEntries() {
+    func testCanBindInstanceUsingDependencies() {
         Injector.shared.withTestOverrides {
-            let service = TestEntryServiceImpl()
+            let service = TestDependencyServiceImpl()
 
-            Injector.shared.bindInstance(\.testEntryService, service)
+            Injector.shared.bindInstance(\.testDependencyService, service)
 
-            let resolved = Injector.shared.resolve(\.testEntryService)
+            let resolved = Injector.shared.resolve(\.testDependencyService)
             XCTAssertTrue(resolved === service)
         }
     }
@@ -209,9 +211,9 @@ private let injectorSourcePath = URL(fileURLWithPath: #filePath)
     .appendingPathComponent("Sources/Injector/Injector.swift")
     .path
 
-private let entrySourcePath = URL(fileURLWithPath: #filePath)
+private let dependencySourcePath = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
     .deletingLastPathComponent()
     .deletingLastPathComponent()
-    .appendingPathComponent("Sources/Injector/Entry.swift")
+    .appendingPathComponent("Sources/Injector/Dependency.swift")
     .path
