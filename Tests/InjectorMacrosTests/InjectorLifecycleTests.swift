@@ -81,7 +81,7 @@ final class InjectorLifecycleTests: XCTestCase {
                 injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
                 injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
             },
-            reportDuplicateServiceBinding: { reports.value.add($0) }
+            reportMisuse: { reports.value.add($0) }
         )
 
         injector.installRheaServiceBindingsIfNeeded()
@@ -99,7 +99,7 @@ final class InjectorLifecycleTests: XCTestCase {
                 injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
                 injector.bind(\.lifecycleService) { _ in LifecycleService() }
             },
-            reportDuplicateServiceBinding: { reports.value.add($0) }
+            reportMisuse: { reports.value.add($0) }
         )
 
         injector.installRheaServiceBindingsIfNeeded()
@@ -113,7 +113,7 @@ final class InjectorLifecycleTests: XCTestCase {
             serviceBindingsTrigger: { injector in
                 injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
             },
-            reportDuplicateServiceBinding: { reports.value.add($0) }
+            reportMisuse: { reports.value.add($0) }
         )
 
         injector.installRheaServiceBindingsIfNeeded()
@@ -147,6 +147,38 @@ final class InjectorLifecycleTests: XCTestCase {
         }
 
         XCTAssertTrue(service.otherResolveFinished)
+    }
+
+    func testWithOverridesDuringInFlightSingletonCreationDoesNotDeadlock() {
+        let started = DispatchSemaphore(value: 0)
+        let resolved = DispatchSemaphore(value: 0)
+        let copied = DispatchSemaphore(value: 0)
+        let parent = Injector.withOverrides {
+            $0.bind(\.lifecycleService) { _ in LifecycleService() }
+            $0.bind(\.slowSingletonService, scope: .singleton) { resolver in
+                started.signal()
+                Thread.sleep(forTimeInterval: 0.05)
+                // Needs the container lock while withOverrides may be copying the container.
+                _ = resolver.resolve(\.lifecycleService)
+                return SlowSingletonService(otherResolveFinished: true)
+            }
+        } operation: {
+            Injector.current
+        }
+
+        let box = UncheckedSendable(value: parent)
+        DispatchQueue.global().async {
+            _ = box.value.resolve(\.slowSingletonService)
+            resolved.signal()
+        }
+        started.wait()
+        DispatchQueue.global().async {
+            _ = box.value.copyForOverrides()
+            copied.signal()
+        }
+
+        XCTAssertEqual(resolved.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(copied.wait(timeout: .now() + 2), .success)
     }
 
     func testSingletonIsCreatedOnceUnderConcurrentResolves() {

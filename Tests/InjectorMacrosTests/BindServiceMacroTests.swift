@@ -114,6 +114,38 @@ final class BindServiceMacroTests: XCTestCase {
         #endif
     }
 
+    func testBindServiceMacroCanUseSessionScope() throws {
+        #if canImport(InjectorMacros)
+        assertMacroExpansion(
+            """
+            @BindService(\\.userService, scope: .session)
+            final class UserService {
+                init() {}
+            }
+            """,
+            expandedSource: """
+            final class UserService {
+                init() {}
+
+                @used
+                @section("__DATA,__rheatime")
+                static let __macro_local_4rheafMu_: RheaRegisterInfo = (
+                    0xb3957a4da5484cc9, 5, false, false,
+                    { _ in
+                        Injector.shared.bind(\\.userService, scope: .session) { _ in
+                            UserService()
+                        }
+                    }
+                )
+            }
+            """,
+            macros: testMacros
+        )
+        #else
+        throw XCTSkip("InjectorMacros is only available when running tests for the host platform")
+        #endif
+    }
+
     func testBindServiceMacroSupportsStructs() throws {
         #if canImport(InjectorMacros)
         assertMacroExpansion(
