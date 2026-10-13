@@ -90,6 +90,14 @@ public final class CheckoutViewModel {
 }
 ```
 
+Or resolve inline without declaring a property:
+
+```swift
+let receipt = injected(\.paymentService).pay(amount: 99)
+```
+
+`injected` resolves from `Injector.current`, the same as `@Injected`, so it also honors `withOverrides` scopes.
+
 ## Dependencies
 
 Injector intentionally uses named dependencies instead of type-only lookups:
@@ -284,6 +292,7 @@ public extension Injector {
 public final class PaymentService: PaymentFeatureAPI {}
 
 @Injected(\.paymentService) private var paymentService
+injected(\.paymentService).pay(amount: 99)
 
 Injector.shared.bind(\.paymentService) { _ in PaymentService() }
 Injector.shared.bindInstance(\.appDefaults, defaults)

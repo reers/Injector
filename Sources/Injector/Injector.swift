@@ -33,6 +33,13 @@ public struct Injected<Service> {
     }
 }
 
+/// Expression form of `@Injected`, for call sites that do not want to declare a property.
+///
+/// Resolves from `Injector.current`, so it honors `Injector.withOverrides` scopes.
+public func injected<Service>(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) -> Service {
+    Injector.current.resolve(dependencyKeyPath)
+}
+
 public final class Injector: Resolver, @unchecked Sendable {
     public static let shared = Injector()
 
