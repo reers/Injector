@@ -80,84 +80,83 @@ final class InjectorScopeTests: XCTestCase {
     }
 
     func testCanBindResolveAndInjectUsingDependencies() {
-        Injector.shared.withTestOverrides {
-            Injector.shared.bind(\.testDependencyService, scope: .singleton) { _ in
+        let (resolved, injected) = Injector.withOverrides {
+            $0.bind(\.testDependencyService, scope: .singleton) { _ in
                 TestDependencyServiceImpl()
             }
-
-            let resolved = Injector.shared.resolve(\.testDependencyService)
-            let injected = TestDependencyConsumer().service
-
-            XCTAssertTrue(resolved is TestDependencyServiceImpl)
-            XCTAssertTrue(injected is TestDependencyServiceImpl)
+        } operation: {
+            (Injector.current.resolve(\.testDependencyService), TestDependencyConsumer().service)
         }
+
+        XCTAssertTrue(resolved is TestDependencyServiceImpl)
+        XCTAssertTrue(injected is TestDependencyServiceImpl)
     }
 
     func testCanBindInstanceUsingDependencies() {
-        Injector.shared.withTestOverrides {
-            let service = TestDependencyServiceImpl()
+        let service = TestDependencyServiceImpl()
 
-            Injector.shared.bindInstance(\.testDependencyService, service)
-
-            let resolved = Injector.shared.resolve(\.testDependencyService)
-            XCTAssertTrue(resolved === service)
+        let resolved = Injector.withOverrides {
+            $0.bindInstance(\.testDependencyService, service)
+        } operation: {
+            Injector.current.resolve(\.testDependencyService)
         }
+
+        XCTAssertTrue(resolved === service)
     }
 
     func testBindDefaultsToNewScope() {
-        Injector.shared.withTestOverrides {
-            Injector.shared.bind(\.testScopedService) { _ in
+        let (first, second) = Injector.withOverrides {
+            $0.bind(\.testScopedService) { _ in
                 TestScopedService()
             }
-
-            let first = Injector.shared.resolve(\.testScopedService)
-            let second = Injector.shared.resolve(\.testScopedService)
-
-            XCTAssertFalse(first === second)
+        } operation: {
+            (Injector.current.resolve(\.testScopedService), Injector.current.resolve(\.testScopedService))
         }
+
+        XCTAssertFalse(first === second)
     }
 
     func testNewScopeCreatesANewInstanceEveryResolve() {
-        Injector.shared.withTestOverrides {
-            Injector.shared.bind(\.testScopedService, scope: .new) { _ in
+        let (first, second) = Injector.withOverrides {
+            $0.bind(\.testScopedService, scope: .new) { _ in
                 TestScopedService()
             }
-
-            let first = Injector.shared.resolve(\.testScopedService)
-            let second = Injector.shared.resolve(\.testScopedService)
-
-            XCTAssertFalse(first === second)
+        } operation: {
+            (Injector.current.resolve(\.testScopedService), Injector.current.resolve(\.testScopedService))
         }
+
+        XCTAssertFalse(first === second)
     }
 
     func testSingletonScopeReusesTheSameInstance() {
-        Injector.shared.withTestOverrides {
-            Injector.shared.bind(\.testScopedService, scope: .singleton) { _ in
+        let (first, second) = Injector.withOverrides {
+            $0.bind(\.testScopedService, scope: .singleton) { _ in
                 TestScopedService()
             }
-
-            let first = Injector.shared.resolve(\.testScopedService)
-            let second = Injector.shared.resolve(\.testScopedService)
-
-            XCTAssertTrue(first === second)
+        } operation: {
+            (Injector.current.resolve(\.testScopedService), Injector.current.resolve(\.testScopedService))
         }
+
+        XCTAssertTrue(first === second)
     }
 
     func testWithOverridesUsesScopedBindingsForInjectedProperties() throws {
-        Injector.shared.withTestOverrides {
-            let sharedService = TestOverrideService()
-            let scopedService = TestOverrideService()
-            Injector.shared.bindInstance(\.testOverrideService, sharedService)
+        let outerService = TestOverrideService()
+        let scopedService = TestOverrideService()
 
+        let (resolved, outerAfterScope) = Injector.withOverrides {
+            $0.bindInstance(\.testOverrideService, outerService)
+        } operation: {
             let resolved = Injector.withOverrides {
                 $0.bindInstance(\.testOverrideService, scopedService)
             } operation: {
                 TestOverrideConsumer().service
             }
-
-            XCTAssertTrue(resolved === scopedService)
-            XCTAssertTrue(Injector.shared.resolve(\.testOverrideService) === sharedService)
+            return (resolved, Injector.current.resolve(\.testOverrideService))
         }
+
+        XCTAssertTrue(resolved === scopedService)
+        XCTAssertTrue(outerAfterScope === outerService)
     }
 
     func testWithOverridesProvidesCurrentInjectorInsideOperation() throws {
