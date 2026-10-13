@@ -9,33 +9,61 @@ public protocol Module {
     static func register(into injector: Injector)
 }
 
+/// Injects a dependency into a property.
+///
+/// The container is captured when the owner is created, so an owner created inside
+/// `Injector.withOverrides` keeps using the scoped bindings even when accessed later from
+/// another thread or callback. The dependency is resolved on first access and then reused,
+/// so `.new` scoped dependencies stay the same instance for the lifetime of the owner,
+/// and later `reset` / rebinding is not observed by an owner that already resolved it.
 @propertyWrapper
 public struct Injected<Service> {
-    private let resolveValue: () -> Service
+    private let storage: Storage
 
     public init(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) {
-        self.resolveValue = {
-            Injector.current.resolve(dependencyKeyPath)
-        }
+        self.init(dependencyKeyPath, container: Injector.current)
     }
 
     public init(
         _ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>,
         container: Injector
     ) {
-        self.resolveValue = {
+        self.storage = Storage {
             container.resolve(dependencyKeyPath)
         }
     }
 
     public var wrappedValue: Service {
-        resolveValue()
+        storage.value
+    }
+
+    private final class Storage: @unchecked Sendable {
+        private let lock = NSRecursiveLock()
+        private let resolve: () -> Service
+        private var resolved: Service?
+
+        init(resolve: @escaping () -> Service) {
+            self.resolve = resolve
+        }
+
+        var value: Service {
+            lock.lock()
+            defer { lock.unlock() }
+
+            if let resolved {
+                return resolved
+            }
+            let service = resolve()
+            resolved = service
+            return service
+        }
     }
 }
 
 /// Expression form of `@Injected`, for call sites that do not want to declare a property.
 ///
-/// Resolves from `Injector.current`, so it honors `Injector.withOverrides` scopes.
+/// Resolves from `Injector.current` on every call, so it honors `Injector.withOverrides` scopes
+/// and returns a new instance per call for `.new` scoped dependencies.
 public func injected<Service>(_ dependencyKeyPath: KeyPath<Injector, Dependency<Service>>) -> Service {
     Injector.current.resolve(dependencyKeyPath)
 }
@@ -125,13 +153,18 @@ public final class Injector: Resolver, @unchecked Sendable {
     /// Fires the `@BindService` registrations. Only the container that owns it records and replays them;
     /// other containers delegate to `shared`, which `@BindService` always binds into.
     private let serviceBindingsTrigger: ((Injector) -> Void)?
+    private let reportDuplicateServiceBinding: (String) -> Void
 
     public convenience init() {
         self.init(serviceBindingsTrigger: nil)
     }
 
-    init(serviceBindingsTrigger: ((Injector) -> Void)?) {
+    init(
+        serviceBindingsTrigger: ((Injector) -> Void)?,
+        reportDuplicateServiceBinding: @escaping (String) -> Void = { assertionFailure($0) }
+    ) {
         self.serviceBindingsTrigger = serviceBindingsTrigger
+        self.reportDuplicateServiceBinding = reportDuplicateServiceBinding
     }
 
     public static func withOverrides<Result>(
@@ -213,6 +246,17 @@ public final class Injector: Resolver, @unchecked Sendable {
         let key = RegistrationKey(dependency)
         let registration = Registration(scope: scope, factory: { resolver in factory(resolver) })
         registrations[key] = registration
+
+        guard recordingRheaServiceRegistrations != nil else {
+            return
+        }
+        // Rebinding manually is a legitimate override; only a second `@BindService` for the same key is a mistake.
+        if recordingRheaServiceRegistrations?[key] != nil {
+            reportDuplicateServiceBinding(
+                "Duplicate @BindService for \\.\(dependency.key) (\(dependency.serviceType)). "
+                    + "The registration order is undefined, so only one implementation takes effect."
+            )
+        }
         recordingRheaServiceRegistrations?[key] = registration
     }
 

@@ -96,7 +96,7 @@ Or resolve inline without declaring a property:
 let receipt = injected(\.paymentService).pay(amount: 99)
 ```
 
-`injected` resolves from `Injector.current`, the same as `@Injected`, so it also honors `withOverrides` scopes.
+`@Injected` captures `Injector.current` when its owner is created, resolves on first access, and reuses that instance afterwards, so a `.new` scoped dependency stays the same for one owner. `injected` resolves from `Injector.current` on every call, so it honors `withOverrides` scopes and returns a new instance per call for `.new` scoped dependencies.
 
 ## Dependencies
 
@@ -253,7 +253,7 @@ let receipt = try Injector.withOverrides {
 }
 ```
 
-`@Injected` reads from `Injector.current`, so objects created inside an override scope automatically use the scoped bindings:
+`@Injected` captures `Injector.current` when its owner is created, so objects created inside an override scope keep using the scoped bindings, even when they are accessed later from another thread or callback:
 
 ```swift
 let output = Injector.withOverrides {

@@ -30,27 +30,6 @@ private extension Injector {
     }
 }
 
-private final class LockedCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-
-    var value: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return count
-    }
-
-    func increment() {
-        lock.lock()
-        count += 1
-        lock.unlock()
-    }
-}
-
-private struct UncheckedSendable<Value>: @unchecked Sendable {
-    let value: Value
-}
-
 final class InjectorLifecycleTests: XCTestCase {
     // MARK: - reset
 
@@ -91,6 +70,59 @@ final class InjectorLifecycleTests: XCTestCase {
         let restored = injector.resolve(\.resetMacroService)
 
         XCTAssertFalse(restored === manual)
+    }
+
+    // MARK: - Duplicate service bindings
+
+    func testDuplicateServiceBindingIsReported() {
+        let reports = UncheckedSendable(value: NSMutableArray())
+        let injector = Injector(
+            serviceBindingsTrigger: { injector in
+                injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
+                injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
+            },
+            reportDuplicateServiceBinding: { reports.value.add($0) }
+        )
+
+        injector.installRheaServiceBindingsIfNeeded()
+
+        XCTAssertEqual(reports.value.count, 1)
+        let report = reports.value.firstObject as? String ?? ""
+        XCTAssertTrue(report.contains("\\.resetMacroService"), report)
+        XCTAssertTrue(report.contains("ResetMacroService"), report)
+    }
+
+    func testDistinctServiceBindingsAreNotReported() {
+        let reports = UncheckedSendable(value: NSMutableArray())
+        let injector = Injector(
+            serviceBindingsTrigger: { injector in
+                injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
+                injector.bind(\.lifecycleService) { _ in LifecycleService() }
+            },
+            reportDuplicateServiceBinding: { reports.value.add($0) }
+        )
+
+        injector.installRheaServiceBindingsIfNeeded()
+
+        XCTAssertEqual(reports.value.count, 0)
+    }
+
+    func testManualRebindingIsNotReported() {
+        let reports = UncheckedSendable(value: NSMutableArray())
+        let injector = Injector(
+            serviceBindingsTrigger: { injector in
+                injector.bind(\.resetMacroService, scope: .singleton) { _ in DefaultResetMacroService() }
+            },
+            reportDuplicateServiceBinding: { reports.value.add($0) }
+        )
+
+        injector.installRheaServiceBindingsIfNeeded()
+        injector.bindInstance(\.resetMacroService, DefaultResetMacroService())
+        injector.bind(\.resetMacroService) { _ in DefaultResetMacroService() }
+        injector.reset()
+        _ = injector.resolve(\.resetMacroService)
+
+        XCTAssertEqual(reports.value.count, 0)
     }
 
     // MARK: - Factories run outside the container lock
