@@ -12,6 +12,7 @@ It is built around a small container, strongly typed dependencies, key-path base
 - Lazy Rhea registration: macro-generated bindings are installed before the first resolve.
 - Manual module registration for app-level or infrastructure bindings.
 - Instance binding for objects such as `UserDefaults`, configuration, clients, and environment values.
+- User session scope: `.session` instances are dropped by `endSession()` on logout or account switch.
 - Test override scopes that restore the previous registration table automatically.
 
 ## Installation
@@ -90,6 +91,14 @@ public final class CheckoutViewModel {
 }
 ```
 
+Or resolve inline without declaring a property:
+
+```swift
+let receipt = injected(\.paymentService).pay(amount: 99)
+```
+
+`@Injected` captures `Injector.current` when its owner is created, resolves on first access, and reuses that instance afterwards, so a `.new` scoped dependency stays the same for one owner. `injected` resolves from `Injector.current` on every call, so it honors `withOverrides` scopes and returns a new instance per call for `.new` scoped dependencies.
+
 ## Dependencies
 
 Injector intentionally uses named dependencies instead of type-only lookups:
@@ -120,12 +129,13 @@ There is no public `resolve(PaymentFeatureAPI.self)` style API.
 
 ## Scopes
 
-Injector has two scopes:
+Injector has three scopes:
 
 ```swift
 public enum Scope {
     case new
     case singleton
+    case session
 }
 ```
 
@@ -158,6 +168,36 @@ Use `.new` with the macro when you want a fresh service on every resolve:
 @BindService(\.temporaryService, scope: .new)
 public final class TemporaryService: TemporaryFeatureAPI {}
 ```
+
+### User Session Scope
+
+Use `.session` for services that hold per-user state, so logout or account switching never leaks it to the next user. It behaves like `.singleton` within one session:
+
+```swift
+@BindService(\.membershipService, scope: .session)
+final class DefaultMembershipService: MembershipService, SessionScoped {
+    func sessionDidEnd() {
+        // Invalidate timers, remove observers, cancel requests.
+    }
+}
+```
+
+Call `endSession()` from the single place where your app logs out:
+
+```swift
+Injector.shared.endSession()
+```
+
+`endSession()` drops every `.session` instance but keeps the registrations, so the next resolve creates a new instance for the new user. In addition:
+
+- Created instances that adopt `SessionScoped` receive `sessionDidEnd()` once, outside the container lock, before `endSession()` returns. Use it to stop work in case someone still holds the old instance.
+- `@Injected` properties of `.session` dependencies resolve again on their next access, so long-lived owners such as root view controllers follow the new session automatically. `injected(...)` always resolves the current instance.
+- In debug builds, resolving a `.session` dependency while constructing a `.singleton` (directly or through `.new` dependencies) triggers an assertion, because the singleton would keep the first session's instance forever. Access session dependencies through `@Injected`, which follows `endSession()` even when read during construction, or call `injected(...)` where they are used.
+- An instance whose creation was racing with `endSession()` is either notified as part of the ended session or never created; the caller then gets the new session's instance.
+- Containers created by `withOverrides` have their own session: they never share session instances with the parent container, and `endSession()` on one does not affect the other.
+- `reset()` also drops session instances, but does not call `sessionDidEnd()`.
+
+Do not store a resolved `.session` service in a plain stored property; it would not follow `endSession()`.
 
 ## Binding Instances
 
@@ -245,7 +285,7 @@ let receipt = try Injector.withOverrides {
 }
 ```
 
-`@Injected` reads from `Injector.current`, so objects created inside an override scope automatically use the scoped bindings:
+`@Injected` captures `Injector.current` when its owner is created, so objects created inside an override scope keep using the scoped bindings, even when they are accessed later from another thread or callback:
 
 ```swift
 let output = Injector.withOverrides {
@@ -284,10 +324,12 @@ public extension Injector {
 public final class PaymentService: PaymentFeatureAPI {}
 
 @Injected(\.paymentService) private var paymentService
+injected(\.paymentService).pay(amount: 99)
 
 Injector.shared.bind(\.paymentService) { _ in PaymentService() }
 Injector.shared.bindInstance(\.appDefaults, defaults)
 Injector.shared.resolve(\.paymentService)
+Injector.shared.endSession()
 
 Injector.withOverrides {
     $0.bind(\.paymentService) { _ in MockPaymentService() }
